@@ -1,0 +1,8 @@
+{
+    "app_id": "yba-lmcvl",
+    "config_version": 20210101,
+    "name": "YBA",
+    "location": "DE-FF",
+    "provider_region": "gcp-europe-west1",
+    "deployment_model": "LOCAL"
+}
