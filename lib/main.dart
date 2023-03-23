@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/services.dart';
 import 'package:realm/realm.dart';
 import 'car.dart';
 
+late Realm _realm;
+
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  var app = App(AppConfiguration("yba-lmcvl"));
+  var loggedInUser = await app.logIn(Credentials.anonymous());
+
+  final config = Configuration.flexibleSync(loggedInUser, [Car.schema]);
+  _realm = Realm(config);
+
   runApp(const MyApp());
 }
 
@@ -33,37 +45,13 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  Future<List<Car>> _getAllCars() async {
-    var app = App(AppConfiguration("yba-lmcvl"));
-    var loggedInUser = await app.logIn(Credentials.anonymous());
-
-    final config = Configuration.flexibleSync(loggedInUser, [Car.schema]);
-    final realm = Realm(config);
-
-    realm.subscriptions.update((mutableSubscriptions) {
-      mutableSubscriptions.add(realm.query<Car>(r'model == $0', ["Model S"]));
-    });
-    await realm.subscriptions.waitForSynchronization();
-
-    final cars = realm.all<Car>().toList();
-
-    return cars;
+  @override
+  void dispose() {
+    _realm.close();
+    super.dispose();
   }
 
-  Future<void> _deleteAllCars() async {
-    var app = App(AppConfiguration("yba-lmcvl"));
-    var loggedInUser = await app.logIn(Credentials.anonymous());
-
-    final config = Configuration.flexibleSync(loggedInUser, [Car.schema]);
-    final realm = Realm(config);
-
-    realm.write(() {
-      realm.deleteAll<Car>();
-    });
-
-    setState(() {});
-  }
-
+  // ACTUAL PAGE
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,10 +91,141 @@ class _MyHomePageState extends State<MyHomePage> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _deleteAllCars,
-        child: const Icon(Icons.remove),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          CreateNewCarDialogue(),
+          const SizedBox(
+            height: 10,
+          ),
+          const DeleteAllCarsDialogue(),
+        ],
       ),
     );
   }
+}
+
+class DeleteAllCarsDialogue extends StatelessWidget {
+  const DeleteAllCarsDialogue({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton(
+      onPressed: () => showDialog<String>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+                title: const Text("Are you sure you want to delete all cars?"),
+                content: const Text("This action cannot be undone"),
+                actions: [
+                  TextButton(
+                      onPressed: () => _deleteAllCars(),
+                      child: const Text("Delete all cars"))
+                ],
+              )),
+      child: const Icon(Icons.delete),
+    );
+  }
+}
+
+class CreateNewCarDialogue extends StatelessWidget {
+  CreateNewCarDialogue({
+    super.key,
+  });
+
+  final TextEditingController _makeController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
+  final TextEditingController _milesController = TextEditingController();
+
+  late String carMake;
+  late String carModel;
+  late int carMiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton(
+      onPressed: () => showDialog<String>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: const Text("Create new car"),
+          content: Column(children: [
+            TextFormField(
+              controller: _makeController,
+              onChanged: (value) {
+                carMake = value.toString();
+              },
+              decoration: const InputDecoration(
+                labelText: "Maker",
+                hintText: "The company that made the car",
+              ),
+            ),
+            TextFormField(
+              controller: _modelController,
+              onChanged: (value) {
+                carModel = value.toString();
+              },
+              decoration: const InputDecoration(
+                labelText: "Model",
+                hintText: "The company assigned model of the car",
+              ),
+            ),
+            TextFormField(
+              controller: _milesController,
+              keyboardType: TextInputType.number,
+              onChanged: (value) {
+                carMiles = int.parse(value);
+              },
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                  labelText: "Miles",
+                  hintText: "Total distance traveled bt the car in miles"),
+            ),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () {
+                  _makeController.dispose();
+                  _modelController.dispose();
+                  _milesController.dispose();
+                  Navigator.pop(context);
+                },
+                child: const Text("Cancel")),
+            TextButton(
+                // TODO: Implement Car creation
+                onPressed: () {
+                  _addCar(carMake, carModel, carMiles);
+                  _makeController.dispose();
+                  _modelController.dispose();
+                  _milesController.dispose();
+                  Navigator.pop(context);
+                },
+                child: const Text("Save")),
+          ],
+        ),
+      ),
+      child: const Icon(Icons.add),
+    );
+  }
+}
+
+Future<void> _addCar(String make, String model, int miles) async {
+  _realm.write(() {
+    _realm.add(Car(ObjectId(), make: make, model: model, miles: miles));
+  });
+}
+
+Future<List<Car>> _getAllCars() async {
+  _realm.subscriptions.update((mutableSubscriptions) {});
+  await _realm.subscriptions.waitForSynchronization();
+
+  final cars = _realm.all<Car>().toList();
+
+  return cars;
+}
+
+Future<void> _deleteAllCars() async {
+  _realm.write(() {
+    _realm.deleteAll<Car>();
+  });
 }
