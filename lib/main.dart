@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:realm/realm.dart';
 import 'car.dart';
@@ -50,6 +51,58 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  Future<void> _addCar(String make, String model, int miles) async {
+    try {
+      final car = Car(ObjectId(), make: make, model: model, miles: miles);
+
+      await _realm.write(() {
+        _realm.add(car);
+      });
+
+      await _realm.refreshAsync();
+
+      print("added: ${car.make} model: ${car.model} miles: ${car.miles}");
+    } catch (e) {
+      print("failed to add car: $e");
+    }
+  }
+
+  Future<List<Car>> _getAllCars() async {
+    try {
+      await _realm.syncSession.waitForDownload();
+
+      final cars = _realm.all<Car>().toList();
+
+      print("Getting all cars");
+      return cars;
+    } catch (e) {
+      List<Car> result = List.empty();
+
+      print("Getting cars failed");
+
+      return result;
+    }
+  }
+
+  Future<void> _deleteAllCars() async {
+    try {
+      await _realm.write(() {
+        _realm.deleteAll<Car>();
+      });
+
+      await _realm.refreshAsync();
+      print("Deleted all cars");
+    } catch (e) {
+      print("failed to delete cars: $e");
+    }
+  }
+
+  Future<void> _refreshCars() async {
+    await _realm.refresh();
+    setState(() {});
+    print("Refreshed all cars");
+  }
+
   late String carMake;
   late String carModel;
   late int carMiles;
@@ -71,38 +124,45 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: FutureBuilder<List<Car>>(
-        future: _getAllCars(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: RefreshIndicator(
+        onRefresh: () => _refreshCars(),
+        child: FutureBuilder<List<Car>>(
+          future: _getAllCars(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.data!.isEmpty) {
-            return const Center(child: Text("No cars found!"));
-          }
+            if (snapshot.data!.isEmpty) {
+              return const Center(child: Text("No cars found!"));
+            }
 
-          return ListView.builder(
-            itemCount: snapshot.data!.length,
-            itemBuilder: (context, index) {
-              var data = snapshot.data!;
+            return ListView.builder(
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  var data = snapshot.data!;
 
-              return Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("ID: ${data[index].id}"),
-                    Text("Make: ${data[index].make}"),
-                    Text("model: ${data[index].model}"),
-                    Text("miles: ${data[index].miles}"),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                  try {
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("ID: ${data[index].id}"),
+                          Text("Make: ${data[index].make}"),
+                          Text("model: ${data[index].model}"),
+                          Text("miles: ${data[index].miles}"),
+                        ],
+                      ),
+                    );
+                  } catch (e) {
+                    print("error drawing data: $e");
+                    return const Text("");
+                  }
+                });
+          },
+        ),
       ),
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -154,10 +214,14 @@ class _MyHomePageState extends State<MyHomePage> {
                       },
                       child: const Text("Cancel")),
                   TextButton(
-                      onPressed: () {
-                        _addCar(carMake, carModel, carMiles);
-                        setState(() {});
-                        Navigator.pop(context);
+                      onPressed: () async {
+                        try {
+                          await _addCar(carMake, carModel, carMiles);
+                          await _refreshCars();
+                          Navigator.pop(context);
+                        } catch (e) {
+                          print(e);
+                        }
                       },
                       child: const Text("Save")),
                 ],
@@ -168,50 +232,28 @@ class _MyHomePageState extends State<MyHomePage> {
           const SizedBox(
             height: 10,
           ),
-          const DeleteAllCarsDialogue(),
+          FloatingActionButton(
+            onPressed: () => showDialog<String>(
+                context: context,
+                builder: (BuildContext context) => AlertDialog(
+                      title: const Text(
+                          "Are you sure you want to delete all cars?"),
+                      content: const Text("This action cannot be undone"),
+                      actions: [
+                        TextButton(
+                            onPressed: () async {
+                              await _deleteAllCars();
+                              setState(() {});
+                              await _refreshCars();
+                              Navigator.pop(context);
+                            },
+                            child: const Text("Delete all cars"))
+                      ],
+                    )),
+            child: const Icon(Icons.delete),
+          )
         ],
       ),
     );
   }
-}
-
-class DeleteAllCarsDialogue extends StatelessWidget {
-  const DeleteAllCarsDialogue({
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      onPressed: () => showDialog<String>(
-          context: context,
-          builder: (BuildContext context) => AlertDialog(
-                title: const Text("Are you sure you want to delete all cars?"),
-                content: const Text("This action cannot be undone"),
-                actions: [
-                  TextButton(
-                      onPressed: () => _deleteAllCars(),
-                      child: const Text("Delete all cars"))
-                ],
-              )),
-      child: const Icon(Icons.delete),
-    );
-  }
-}
-
-Future<void> _addCar(String make, String model, int miles) async {
-  final car = Car(ObjectId(), make: make, model: model, miles: miles);
-
-  _realm.write(() => _realm.add(car));
-}
-
-Future<List<Car>> _getAllCars() async {
-  final cars = _realm.all<Car>().toList();
-  return cars;
-}
-
-Future<void> _deleteAllCars() async {
-  _realm.write(() {
-    _realm.deleteAll<Car>();
-  });
 }
