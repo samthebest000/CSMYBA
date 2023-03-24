@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/services.dart';
 import 'package:realm/realm.dart';
 import 'car.dart';
 
@@ -14,6 +13,12 @@ Future<void> main() async {
 
   final config = Configuration.flexibleSync(loggedInUser, [Car.schema]);
   _realm = Realm(config);
+
+  _realm.subscriptions.update((mutableSubscriptions) {
+    mutableSubscriptions.add(_realm.query<Car>(r'miles > $0', [0]));
+  });
+
+  await _realm.subscriptions.waitForSynchronization();
 
   runApp(const MyApp());
 }
@@ -45,6 +50,14 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  late String carMake;
+  late String carModel;
+  late int carMiles;
+
+  final TextEditingController _makeController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
+  final TextEditingController _milesController = TextEditingController();
+
   @override
   void dispose() {
     _realm.close();
@@ -94,7 +107,64 @@ class _MyHomePageState extends State<MyHomePage> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          CreateNewCarDialogue(),
+          FloatingActionButton(
+            onPressed: () => showDialog<String>(
+              context: context,
+              builder: (BuildContext context) => AlertDialog(
+                title: const Text("Create new car"),
+                content: Column(children: [
+                  TextFormField(
+                    controller: _makeController,
+                    onChanged: (value) {
+                      carMake = value.toString();
+                    },
+                    decoration: const InputDecoration(
+                      labelText: "Maker",
+                      hintText: "The company that made the car",
+                    ),
+                  ),
+                  TextFormField(
+                    controller: _modelController,
+                    onChanged: (value) {
+                      carModel = value.toString();
+                    },
+                    decoration: const InputDecoration(
+                      labelText: "Model",
+                      hintText: "The company assigned model of the car",
+                    ),
+                  ),
+                  TextFormField(
+                    controller: _milesController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      carMiles = int.parse(value);
+                    },
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                        labelText: "Miles",
+                        hintText:
+                            "Total distance traveled bt the car in miles"),
+                  ),
+                ]),
+                actions: [
+                  TextButton(
+                      onPressed: () {
+                        setState(() {});
+                        Navigator.pop(context);
+                      },
+                      child: const Text("Cancel")),
+                  TextButton(
+                      onPressed: () {
+                        _addCar(carMake, carModel, carMiles);
+                        setState(() {});
+                        Navigator.pop(context);
+                      },
+                      child: const Text("Save")),
+                ],
+              ),
+            ),
+            child: const Icon(Icons.add),
+          ),
           const SizedBox(
             height: 10,
           ),
@@ -129,98 +199,14 @@ class DeleteAllCarsDialogue extends StatelessWidget {
   }
 }
 
-class CreateNewCarDialogue extends StatelessWidget {
-  CreateNewCarDialogue({
-    super.key,
-  });
-
-  final TextEditingController _makeController = TextEditingController();
-  final TextEditingController _modelController = TextEditingController();
-  final TextEditingController _milesController = TextEditingController();
-
-  late String carMake;
-  late String carModel;
-  late int carMiles;
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      onPressed: () => showDialog<String>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: const Text("Create new car"),
-          content: Column(children: [
-            TextFormField(
-              controller: _makeController,
-              onChanged: (value) {
-                carMake = value.toString();
-              },
-              decoration: const InputDecoration(
-                labelText: "Maker",
-                hintText: "The company that made the car",
-              ),
-            ),
-            TextFormField(
-              controller: _modelController,
-              onChanged: (value) {
-                carModel = value.toString();
-              },
-              decoration: const InputDecoration(
-                labelText: "Model",
-                hintText: "The company assigned model of the car",
-              ),
-            ),
-            TextFormField(
-              controller: _milesController,
-              keyboardType: TextInputType.number,
-              onChanged: (value) {
-                carMiles = int.parse(value);
-              },
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                  labelText: "Miles",
-                  hintText: "Total distance traveled bt the car in miles"),
-            ),
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () {
-                  _makeController.dispose();
-                  _modelController.dispose();
-                  _milesController.dispose();
-                  Navigator.pop(context);
-                },
-                child: const Text("Cancel")),
-            TextButton(
-                // TODO: Implement Car creation
-                onPressed: () {
-                  _addCar(carMake, carModel, carMiles);
-                  _makeController.dispose();
-                  _modelController.dispose();
-                  _milesController.dispose();
-                  Navigator.pop(context);
-                },
-                child: const Text("Save")),
-          ],
-        ),
-      ),
-      child: const Icon(Icons.add),
-    );
-  }
-}
-
 Future<void> _addCar(String make, String model, int miles) async {
-  _realm.write(() {
-    _realm.add(Car(ObjectId(), make: make, model: model, miles: miles));
-  });
+  final car = Car(ObjectId(), make: make, model: model, miles: miles);
+
+  _realm.write(() => _realm.add(car));
 }
 
 Future<List<Car>> _getAllCars() async {
-  _realm.subscriptions.update((mutableSubscriptions) {});
-  await _realm.subscriptions.waitForSynchronization();
-
   final cars = _realm.all<Car>().toList();
-
   return cars;
 }
 
